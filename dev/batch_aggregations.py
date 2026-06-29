@@ -19,8 +19,10 @@ spark = SparkSession. \
         .appName("kafka_receiver") \
         .getOrCreate()
 spark.sparkContext.setLogLevel("ERROR")
+spark.sql("CREATE DATABASE IF NOT EXISTS glue.db")
 
-df =spark.read.format("iceberg").load("glue.db.transactions_bronze")
-df.createOrReplaceTempView("transactions_bronze")
-df = spark.sql("SELECT merchant, date(event_time) as event_date, count(1) as total_transactions, SUM(amount) as total_amount FROM transactions_bronze GROUP BY merchant, date(event_time)")
-df.show()
+transactions =spark.read.format("iceberg").load("glue.db.transactions_bronze")
+transactions.createOrReplaceTempView("transactions_bronze")
+agg_transactions = spark.sql("SELECT merchant, date(event_time) as event_date, count(1) as total_transactions, SUM(amount) as total_amount FROM transactions_bronze GROUP BY merchant, date(event_time)")
+agg_transactions.write.format("iceberg").mode("overwrite").saveAsTable("glue.db.transactions_batch_agg")
+spark.stop()
