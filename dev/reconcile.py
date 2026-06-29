@@ -28,7 +28,7 @@ stream_df = spark.sql("SELECT cast(window.start as date) as date, merchant, sum(
 batch_df_final.createOrReplaceTempView("batch_agg")
 stream_df.createOrReplaceTempView("stream_agg") 
 
-spark.sql("""
+report = spark.sql("""
                 SELECT 
                         b.date, 
                         b.merchant, 
@@ -44,4 +44,6 @@ spark.sql("""
                         END as reconciliation_status
                 FROM batch_agg b 
                 FULL OUTER JOIN stream_agg s 
-                ON b.date = s.date AND b.merchant = s.merchant""").show()
+                ON b.date = s.date AND b.merchant = s.merchant""")
+
+report.writeTo("glue.db.reconciliation_report").createOrReplace()

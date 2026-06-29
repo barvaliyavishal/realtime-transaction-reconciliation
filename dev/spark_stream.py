@@ -33,7 +33,7 @@ bronze_query = (parsed_df \
     .writeStream \
     .format("iceberg") \
     .outputMode("append") \
-    .option("checkpointLocation", "file:///C:/Users/owner/iceberg-checkpoint-s3") \
+    .option("checkpointLocation", "file:///C:/Users/owner/iceberg-checkpoint-spark-bronze-s3") \
     .toTable("glue.db.transactions_bronze"))
     
 agg_df = (
@@ -45,7 +45,7 @@ agg_df = (
 agg_query = (agg_df \
     .writeStream.format("iceberg") \
     .outputMode("append") \
-    .option("checkpointLocation", "file:///C:/Users/owner/iceberg-checkpoint-streaming-s3") \
+    .option("checkpointLocation", "file:///C:/Users/owner/iceberg-checkpoint-spark-streaming-s3") \
     .toTable("glue.db.transactions_stream_agg"))
 
 spark.streams.awaitAnyTermination()
