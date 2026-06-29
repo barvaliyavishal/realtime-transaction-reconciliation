@@ -10,15 +10,16 @@ schema = "transaction_id STRING, card_id STRING, amount DOUBLE, currency STRING,
 
 spark = SparkSession. \
         builder \
-        .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.1") \
+        .config("spark.jars.packages", "org.apache.iceberg:iceberg-aws-bundle:1.9.1,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.1") \
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
-        .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog") \
-        .config("spark.sql.catalog.local.type", "hadoop") \
-        .config("spark.sql.catalog.local.warehouse", "file:///C:/Users/owner/iceberg-warehouse") \
+        .config("spark.sql.catalog.glue", "org.apache.iceberg.spark.SparkCatalog") \
+        .config("spark.sql.catalog.glue.catalog-impl", "org.apache.iceberg.aws.glue.GlueCatalog") \
+        .config("spark.sql.catalog.glue.warehouse", "s3://vishal-transaction-lake/warehouse") \
+        .config("spark.sql.catalog.glue.io-impl", "org.apache.iceberg.aws.s3.S3FileIO") \
         .appName("kafka_receiver") \
         .getOrCreate()
-
-spark.sql("CREATE DATABASE IF NOT EXISTS local.db")
+spark.sparkContext.setLogLevel("ERROR")
+spark.sql("CREATE DATABASE IF NOT EXISTS glue.db")
 
 df = spark.readStream.format("kafka") \
     .option("kafka.bootstrap.servers", "localhost:9092") \
@@ -30,7 +31,7 @@ parsed_df = df.withColumn("parsed_value", from_json(col("value").cast("string"),
     .writeStream \
     .format("iceberg") \
     .outputMode("append") \
-    .option("checkpointLocation", "file:///C:/Users/owner/iceberg-checkpoint") \
-    .toTable("local.db.transactions_bronze") \
+    .option("checkpointLocation", "file:///C:/Users/owner/iceberg-checkpoint-s3") \
+    .toTable("glue.db.transactions_bronze") \
     .awaitTermination()
     
