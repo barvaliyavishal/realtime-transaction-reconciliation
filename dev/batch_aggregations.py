@@ -20,4 +20,7 @@ spark = SparkSession. \
         .getOrCreate()
 spark.sparkContext.setLogLevel("ERROR")
 
-spark.read.format("iceberg").load("glue.db.transactions_bronze").show()
+df =spark.read.format("iceberg").load("glue.db.transactions_bronze")
+df.createOrReplaceTempView("transactions_bronze")
+df = spark.sql("SELECT merchant, date(event_time) as event_date, count(1) as total_transactions, SUM(amount) as total_amount FROM transactions_bronze GROUP BY merchant, date(event_time)")
+df.show()
