@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+iceberg-warehouse/
+iceberg-checkpoint/
