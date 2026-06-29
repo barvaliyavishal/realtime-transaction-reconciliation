@@ -3,7 +3,7 @@ os.environ["HADOOP_HOME"] = "C:\\hadoop"
 os.environ["PATH"] = os.environ["PATH"] + ";C:\\hadoop\\bin"
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col
+from pyspark.sql.functions import count, from_json, col, window, sum as spark_sum
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, TimestampType
 
 schema = "transaction_id STRING, card_id STRING, amount DOUBLE, currency STRING, merchant STRING, status STRING, event_time TIMESTAMP"
@@ -27,11 +27,25 @@ df = spark.readStream.format("kafka") \
     .load()
 
 parsed_df = df.withColumn("parsed_value", from_json(col("value").cast("string"), schema)) \
-    .select("parsed_value.*") \
+    .select("parsed_value.*")
+
+bronze_query = (parsed_df \
     .writeStream \
     .format("iceberg") \
     .outputMode("append") \
     .option("checkpointLocation", "file:///C:/Users/owner/iceberg-checkpoint-s3") \
-    .toTable("glue.db.transactions_bronze") \
-    .awaitTermination()
+    .toTable("glue.db.transactions_bronze"))
     
+agg_df = (
+    parsed_df.withColumn("event_time", col("event_time").cast(TimestampType())) \
+        .withWatermark("event_time", "1 minute") \
+        .groupBy(window("event_time", "1 minute"), "merchant") \
+        .agg(count("*").alias("transaction_count"), spark_sum("amount").alias("total_amount"))
+)
+agg_query = (agg_df \
+    .writeStream.format("iceberg") \
+    .outputMode("append") \
+    .option("checkpointLocation", "file:///C:/Users/owner/iceberg-checkpoint-streaming-s3") \
+    .toTable("glue.db.transactions_stream_agg"))
+
+spark.streams.awaitAnyTermination()
