@@ -1,130 +1,175 @@
-# Real-Time Transaction Reconciliation
+# Real-Time Transaction Reconciliation on Kafka, Spark, Iceberg, and Glue
 
-This repository models a real-time transaction pipeline for card payments and the reconciliation controls around it. The current implementation is intentionally small, but the architecture is the same one you would use in production: produce events, stream them through Kafka, transform them with Spark Structured Streaming, and land them in an Iceberg table that is queryable through a catalog.
+## Project Summary
 
-## Architecture
+This project demonstrates a production-style data engineering pattern for financial transaction monitoring.
+
+It builds a complete real-time reconciliation pipeline where:
+
+1. card transactions are generated continuously,
+2. ingested through Kafka,
+3. processed with Spark Structured Streaming,
+4. stored in Iceberg tables on S3 registered in AWS Glue,
+5. compared against batch aggregates to detect drift.
+
+The final output is a reconciliation report with MATCH or MISMATCH status by date and merchant.
+
+## Business Problem
+
+Payments systems need a reliable control to confirm that streaming metrics match batch truth.
+
+This project solves that by implementing two independent aggregation paths and reconciling them:
+
+1. Stream path: near real-time windowed metrics.
+2. Batch path: daily aggregates from persisted raw data.
+3. Reconciliation path: side-by-side comparison and variance calculation.
+
+## End-to-End Architecture
 
 ```mermaid
 flowchart LR
-	 A[producer.py\nSynthetic card transactions] --> B[(Kafka topic\ntransactions)]
-	 B --> C[spark_stream.py\nSpark Structured Streaming]
-	 C --> D[(Iceberg bronze table)]
-	 D --> E[Athena / SQL readers]
-	 C -. checkpoint .-> F[(Local checkpoint directory)]
-	 C -. catalog + warehouse .-> G[(Glue catalog + S3 warehouse)]
+    A[Python Producer<br/>Synthetic Transactions] --> B[(Kafka Topic: transactions)]
+    B --> C[Spark Structured Streaming Job]
+    C --> D[(Iceberg Bronze Table<br/>glue.db.transactions_bronze)]
+    C --> E[(Iceberg Stream Aggregate Table<br/>glue.db.transactions_stream_agg)]
+    D --> F[Spark Batch Aggregation Job]
+    F --> G[(Iceberg Batch Aggregate Table<br/>glue.db.transactions_batch_agg)]
+    E --> H[Spark Reconciliation Job]
+    G --> H
+    H --> I[Reconciliation Output<br/>MATCH or MISMATCH]
+
+    C -. checkpoints .-> J[(Local Checkpoint Directories)]
+    D -. metadata .-> K[(AWS Glue Catalog)]
+    E -. metadata .-> K
+    G -. metadata .-> K
+    D -. data files .-> L[(Amazon S3 Warehouse)]
+    E -. data files .-> L
+    G -. data files .-> L
 ```
 
-The code in this repo is split into four runtime paths:
+## Data Flow Details
 
-1. `dev/producer.py` generates synthetic JSON transactions and writes them to Kafka.
-2. `dev/spark_stream.py` reads the Kafka topic, parses the JSON into typed columns, and writes both bronze and streaming aggregate Iceberg tables.
-3. `dev/batch_aggregations.py` computes daily batch aggregates from bronze and writes `glue.db.transactions_batch_agg`.
-4. `dev/reconcile.py` compares batch and stream aggregates and reports match/mismatch by date and merchant.
+### 1) Ingestion
 
-The target storage/catalog path in the streaming job is Glue + S3. That makes the table queryable by engines such as Athena without changing the write path.
+The producer emits transaction events with fields like transaction_id, card_id, amount, merchant, status, and event_time into Kafka topic transactions.
 
-## What runs where
+### 2) Streaming Transformation
 
-- Kafka runs locally in Docker through `dev/docker-compose.yml`.
-- The producer runs as a normal Python process on the developer machine.
-- Spark runs locally through PySpark, but the job is configured like a cloud writer: it uses an Iceberg catalog, an S3 warehouse location, and a local checkpoint.
-- `dev/read_iceberg.py` is a small verification helper that reads Glue-backed Iceberg tables through Spark.
-- `dev/spark_check.py` is a bootstrap test that confirms Spark can start before running the streaming job.
+The streaming job parses Kafka JSON payloads, writes raw records to a bronze Iceberg table, and simultaneously writes windowed merchant-level aggregates into a second Iceberg table.
 
-## Tech stack
+### 3) Batch Aggregation
 
-- Apache Kafka 3.7.0 in KRaft mode, started with Docker Compose
-- Python producer using `kafka-python`
-- Apache Spark 3.5.1 with PySpark Structured Streaming
-- Apache Iceberg 1.9.1 for the table format
-- AWS Glue Data Catalog and Amazon S3 for the target catalog and warehouse
-- Athena as the SQL reader for the Iceberg table
+The batch job reads bronze data, computes daily metrics by merchant, and stores them in a batch aggregate Iceberg table.
 
-## Current status
+### 4) Reconciliation
 
-- Kafka broker: implemented locally through Docker Compose
-- Synthetic event producer: implemented in `dev/producer.py`
-- Streaming ingestion: implemented in `dev/spark_stream.py`
-- Iceberg verification reader: implemented in `dev/read_iceberg.py`
-- Batch aggregation job: implemented in `dev/batch_aggregations.py`
-- Reconciliation job: implemented in `dev/reconcile.py`
+The reconciliation job compares stream and batch metrics by date and merchant, computes differences in count and amount, and labels each key as MATCH or MISMATCH.
 
-## Repository layout
+## Tech Stack
 
-- `dev/docker-compose.yml` starts the local Kafka broker
-- `dev/producer.py` emits synthetic transaction events
-- `dev/spark_stream.py` consumes Kafka and writes to Iceberg
-- `dev/read_iceberg.py` reads the Iceberg table for verification
-- `dev/batch_aggregations.py` computes batch aggregates from bronze
-- `dev/reconcile.py` compares batch and stream aggregates
-- `dev/spark_check.py` verifies Spark can start in the current environment
+1. Python 3.12
+2. Apache Kafka 3.7 (local via Docker Compose)
+3. Apache Spark 3.5.1 with Structured Streaming
+4. Apache Iceberg 1.9.1 table format
+5. AWS Glue Data Catalog
+6. Amazon S3 warehouse
 
-## Local setup
+## Repository Structure
 
-1. Start Kafka:
+1. dev/docker-compose.yml: local Kafka setup
+2. dev/producer.py: synthetic event generator
+3. dev/spark_stream.py: Kafka to Iceberg bronze plus stream aggregate
+4. dev/batch_aggregations.py: batch aggregate generation from bronze
+5. dev/reconcile.py: reconciliation logic and mismatch detection
+6. dev/read_iceberg.py: ad hoc Glue table validation query helper
+7. dev/spark_check.py: Spark startup sanity check
 
-	```powershell
-	docker compose -f dev/docker-compose.yml up -d
-	```
+## How to Run
 
-2. Install Python dependencies:
+### Prerequisites
 
-	```powershell
-	python -m pip install kafka-python pyspark==3.5.1
-	```
+1. Java installed and configured through JAVA_HOME
+2. Hadoop winutils setup for Windows through HADOOP_HOME
+3. Docker Desktop running
+4. AWS credentials configured with Glue and S3 access
 
-3. Start the producer in one terminal:
+### Execution Steps
 
-	```powershell
-	python dev/producer.py
-	```
+~~~powershell
+# 1) Start Kafka
+docker compose -f dev/docker-compose.yml up -d
 
-4. Start the streaming job in another terminal:
+# 2) Install dependencies
+python -m pip install -r requirements.txt
 
-	```powershell
-	python dev/spark_stream.py
-	```
+# 3) Start event producer
+python dev/producer.py
 
-5. Optionally validate the Iceberg table read path:
+# 4) Start streaming pipeline (in a new terminal)
+python dev/spark_stream.py
 
-	```powershell
-	python dev/read_iceberg.py
-	```
+# 5) Build batch aggregates
+python dev/batch_aggregations.py
 
-6. Build batch aggregates:
+# 6) Run reconciliation
+python dev/reconcile.py
 
-	```powershell
-	python dev/batch_aggregations.py
-	```
+# 7) Optional table reads
+python dev/read_iceberg.py
+~~~
 
-7. Run reconciliation between batch and stream aggregates:
+## Iceberg Tables Created
 
-	```powershell
-	python dev/reconcile.py
-	```
+1. glue.db.transactions_bronze
+2. glue.db.transactions_stream_agg
+3. glue.db.transactions_batch_agg
 
-## AWS and Windows notes
+## Reconciliation Output Columns
 
-- The streaming job expects AWS credentials to be available through the AWS CLI profile on the machine.
-- The Iceberg warehouse location is configured to use S3.
-- On Windows, Spark may require `JAVA_HOME` and `HADOOP_HOME`/`winutils.exe` for local execution.
-- The current development environment keeps the Spark checkpoint on local disk; in a production deployment, that checkpoint should move to durable object storage.
+1. date
+2. merchant
+3. batch_total_transaction_count
+4. stream_total_transaction_count
+5. batch_total_amount
+6. stream_total_amount
+7. transaction_count_difference
+8. total_amount_difference
+9. reconciliation_status
 
-## Production shape
+## Engineering Highlights
 
-This repo is a development version of a wider reconciliation platform. A realistic production version would usually add:
+1. Designed dual-path aggregation for data quality validation.
+2. Implemented structured streaming with event-time windowing.
+3. Used Glue plus Iceberg for open table format and metadata decoupling.
+4. Kept raw bronze and derived aggregates separate for auditability.
+5. Added reconciliation status logic usable for control dashboards and alerting.
 
-- durable checkpoint storage
-- least-privilege AWS IAM permissions
-- an orchestrated batch reconciliation job
-- alerts for drift between source aggregates and streamed aggregates
-- stronger schema evolution and data quality checks
+## Troubleshooting Guide
 
-## Troubleshooting
+1. Table not exists
+   Cause: querying local catalog while writes are in Glue catalog.
+   Fix: use glue.db table names consistently in all scripts.
 
-- If `python` is not recognized, use `python -m pip` and check the VS Code terminal PATH settings.
-- If Spark fails on Windows with Hadoop-related errors, ensure `JAVA_HOME` is set and either provide `winutils.exe` or run the job in Docker/WSL/Linux.
-- If Spark cannot find the Kafka source, make sure the Kafka connector package is included in the Spark session configuration.
-- If you get `table not exists`, confirm both writer and reader jobs use the same Glue catalog prefix (`glue.db.*`), not a local catalog prefix (`local.db.*`).
-- If reconciliation fails with unresolved `total_transaction_count`, use `total_transactions` from `transactions_batch_agg` and alias it during select.
-- For stream aggregation, use Spark SQL `sum` from `pyspark.sql.functions` (for example `sum as spark_sum`) instead of Python built-in `sum`.
+2. Unresolved column total_transaction_count in batch table
+   Cause: batch table column name is total_transactions.
+   Fix: alias total_transactions as total_transaction_count in reconciliation select.
+
+3. TypeError from sum on string
+   Cause: Python built-in sum used instead of Spark SQL sum.
+   Fix: import Spark sum from pyspark.sql.functions and use it in aggregations.
+
+4. Spark UI port 4040 busy
+   Cause: another Spark app already running.
+   Fix: Spark auto-falls back to the next available port; this warning is safe.
+
+## What to Improve Next
+
+1. Move checkpoint paths from local disk to S3 for stronger recovery.
+2. Partition Iceberg tables for faster analytical queries.
+3. Add automated tests for schema and reconciliation assertions.
+4. Add orchestration and scheduling for batch and reconciliation jobs.
+5. Publish reconciliation metrics to a monitoring system.
+
+## Why This Project Matters for Data Engineering Roles
+
+This repository demonstrates practical experience in streaming, lakehouse table formats, cloud catalog integration, and data quality controls. It shows not only data movement, but also correctness validation, which is a core expectation in production data platforms.
