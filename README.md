@@ -65,6 +65,8 @@ The batch job reads bronze data, computes daily metrics by merchant, and stores 
 
 The reconciliation job compares stream and batch metrics by date and merchant, computes differences in count and amount, and labels each key as MATCH or MISMATCH.
 
+Because the streaming path is windowed and watermark-aware, it can legitimately lag batch aggregates for in-flight windows; reconciliation differences therefore quantify both expected short-term drift and true mismatches.
+
 ## Tech Stack
 
 1. Python 3.12
@@ -82,7 +84,6 @@ The reconciliation job compares stream and batch metrics by date and merchant, c
 4. dev/batch_aggregations.py: batch aggregate generation from bronze
 5. dev/reconcile.py: reconciliation logic and mismatch detection
 6. dev/read_iceberg.py: ad hoc Glue table validation query helper
-7. dev/spark_check.py: Spark startup sanity check
 
 ## How to Run
 
@@ -123,6 +124,7 @@ python dev/read_iceberg.py
 1. glue.db.transactions_bronze
 2. glue.db.transactions_stream_agg
 3. glue.db.transactions_batch_agg
+4. glue.db.reconciliation_report
 
 ## Reconciliation Output Columns
 
