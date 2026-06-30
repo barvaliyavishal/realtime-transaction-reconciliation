@@ -37,14 +37,18 @@ flowchart LR
     E --> H[Spark Reconciliation Job]
     G --> H
     H --> I[Reconciliation Output<br/>MATCH or MISMATCH]
+   M[Airflow DAG<br/>daily_reconciliation] -. orchestrates .-> F
+   M -. runs after batch success .-> H
 
     C -. checkpoints .-> J[(Local Checkpoint Directories)]
     D -. metadata .-> K[(AWS Glue Catalog)]
     E -. metadata .-> K
     G -. metadata .-> K
+   I -. metadata .-> K
     D -. data files .-> L[(Amazon S3 Warehouse)]
     E -. data files .-> L
     G -. data files .-> L
+   I -. data files .-> L
 ```
 
 ## Data Flow Details
