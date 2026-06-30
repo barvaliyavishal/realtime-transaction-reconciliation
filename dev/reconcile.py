@@ -47,3 +47,4 @@ report = spark.sql("""
                 ON b.date = s.date AND b.merchant = s.merchant""")
 
 report.writeTo("glue.db.reconciliation_report").createOrReplace()
+spark.stop()
