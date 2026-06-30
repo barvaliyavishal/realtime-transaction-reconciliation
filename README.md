@@ -1,4 +1,4 @@
-# Real-Time Transaction Reconciliation on Kafka, Spark, Iceberg, and Glue
+# Real-Time Transaction Reconciliation on Kafka, Spark Streaming, Iceberg, and Glue
 
 ## Project Summary
 
