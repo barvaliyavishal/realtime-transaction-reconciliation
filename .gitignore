@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 iceberg-warehouse/
 iceberg-checkpoint/
+airflow/logs/
+airflow/plugins/
