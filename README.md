@@ -75,6 +75,7 @@ Because the streaming path is windowed and watermark-aware, it can legitimately 
 4. Apache Iceberg 1.9.1 table format
 5. AWS Glue Data Catalog
 6. Amazon S3 warehouse
+7. Apache Airflow 2.9.3 (local via Docker Compose)
 
 ## Repository Structure
 
@@ -84,6 +85,13 @@ Because the streaming path is windowed and watermark-aware, it can legitimately 
 4. dev/batch_aggregations.py: batch aggregate generation from bronze
 5. dev/reconcile.py: reconciliation logic and mismatch detection
 6. dev/read_iceberg.py: ad hoc Glue table validation query helper
+7. airflow/dags/daily_reconciliation.py: Airflow DAG that schedules and orders the batch aggregation and reconciliation tasks
+8. airflow/docker-compose.yaml: local Airflow stack
+
+## Status and Progress
+
+1. Phase 3 (Dual-Path Reconciliation and Orchestration): Done. Dual-path reconciliation is complete, and an Apache Airflow DAG now orchestrates the daily batch aggregation and reconciliation jobs with task dependencies so reconciliation runs only after batch aggregation succeeds.
+2. In this local demo, the DAG tasks represent the batch and reconciliation Spark jobs and demonstrate scheduling and dependency ordering; wiring full containerized Spark execution inside the Airflow workers is a documented next step.
 
 ## How to Run
 
@@ -145,6 +153,7 @@ python dev/read_iceberg.py
 3. Used Glue plus Iceberg for open table format and metadata decoupling.
 4. Kept raw bronze and derived aggregates separate for auditability.
 5. Added reconciliation status logic usable for control dashboards and alerting.
+6. Orchestrated the daily batch and reconciliation pipeline with an Airflow DAG using task dependencies and a daily schedule.
 
 ## Troubleshooting Guide
 
@@ -169,8 +178,7 @@ python dev/read_iceberg.py
 1. Move checkpoint paths from local disk to S3 for stronger recovery.
 2. Partition Iceberg tables for faster analytical queries.
 3. Add automated tests for schema and reconciliation assertions.
-4. Add orchestration and scheduling for batch and reconciliation jobs.
-5. Publish reconciliation metrics to a monitoring system.
+4. Publish reconciliation metrics to a monitoring system.
 
 ## Why This Project Matters for Data Engineering Roles
 
